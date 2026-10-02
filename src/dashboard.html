@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service Watcher</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1c2024; --muted: #60646c; --border: #e0e1e6; --accent: #3e63dd; --accent-text: #fff;
+    --up: #30a46c; --down: #e5484d; --degraded: #f5a524; --pending: #8b8d98; --paused: #8b8d98; --maintenance: #3e63dd; --disabled: #b9bbc6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111113; --card: #18191b; --text: #edeef0; --muted: #a0a3ab; --border: #2e3135; --disabled: #4a4d55; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 17px; margin: 0; }
+  nav { display: flex; gap: 4px; }
+  nav button { border: none; background: none; padding: 6px 10px; border-radius: 6px; color: var(--muted); font-weight: 500; }
+  nav button.active { background: var(--bg); color: var(--text); }
+  .summary { display: flex; gap: 12px; color: var(--muted); font-size: 13px; }
+  .summary b { color: inherit; }
+  .spacer { flex: 1; }
+  input, select, textarea, button { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px; }
+  textarea { width: 100%; min-height: 70px; font-family: ui-monospace, monospace; font-size: 12.5px; resize: vertical; }
+  button { cursor: pointer; white-space: nowrap; }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .55; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.danger { color: var(--down); }
+  button.link { border: none; background: none; color: var(--accent); padding: 2px 4px; }
+  .banner { padding: 9px 24px; font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .banner.err { background: var(--down); color: #fff; }
+  .banner.warn { background: color-mix(in srgb, var(--degraded) 25%, var(--card)); }
+  .banner pre { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; }
+  .view { padding: 20px 24px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--c, var(--border)); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .name { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--c); border: 1px solid var(--c); border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+  .mono { font-family: ui-monospace, monospace; }
+  .target, .msg { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msg { white-space: normal; }
+  .stats { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
+  .stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .bars { display: flex; gap: 2px; height: 26px; align-items: flex-end; }
+  .bars span { flex: 1; min-width: 2px; border-radius: 1px; background: var(--up); opacity: .85; }
+  .bars span.fail { background: var(--down); height: 100% !important; }
+  .bars span.slow { background: var(--degraded); }
+  .bars.empty { align-items: center; color: var(--muted); font-size: 12px; }
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 6px; color: var(--muted); }
+  .chip[data-tag] { cursor: pointer; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .actions button { font-size: 12px; padding: 3px 8px; }
+  h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 28px 0 10px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 13px; }
+  td { padding: 7px 12px; border-top: 1px solid var(--border); vertical-align: top; }
+  td.k { font-weight: 600; color: var(--c); text-transform: uppercase; font-size: 11.5px; white-space: nowrap; }
+  td.t { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 40px 20px; text-align: center; grid-column: 1 / -1; background: var(--card); border: 1px dashed var(--border); border-radius: 8px; }
+  .empty p { margin: 0 0 12px; }
+
+  /* Forms */
+  dialog { border: 1px solid var(--border); border-radius: 10px; padding: 0; width: min(760px, calc(100vw - 24px)); max-height: calc(100vh - 40px); background: var(--card); color: var(--text); }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  .dlg { display: flex; flex-direction: column; max-height: calc(100vh - 42px); }
+  .dlg-head { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .dlg-head h3 { margin: 0; font-size: 16px; }
+  .dlg-body { padding: 4px 20px 16px; overflow-y: auto; }
+  .dlg-foot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+  .form h4 { grid-column: 1 / -1; margin: 14px 0 -4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field.wide { grid-column: 1 / -1; }
+  .field > label { font-size: 12.5px; font-weight: 600; }
+  .field > label .req { color: var(--down); }
+  .field small { color: var(--muted); font-size: 11.5px; }
+  .field input:not([type=checkbox]), .field select { width: 100%; }
+  .check { display: flex; align-items: center; gap: 7px; font-weight: 500; font-size: 13px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .ri { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .ri > input, .ri > select { flex: 1; min-width: 90px; }
+  .ri > input.short { flex: 0 1 110px; }
+  .ri > button { padding: 3px 8px; }
+  .mw { border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+  .mw[data-kind=weekly] .once, .mw[data-kind=once] .weekly { display: none; }
+  .mw .days label { font-size: 12px; display: inline-flex; gap: 3px; align-items: center; margin-right: 6px; }
+  .secret { display: flex; gap: 6px; }
+  .secret input { flex: 1; }
+  .problems { background: color-mix(in srgb, var(--down) 12%, var(--card)); border: 1px solid var(--down); border-radius: 6px; padding: 8px 12px; margin-top: 12px; font-size: 13px; }
+  .problems ul { margin: 4px 0 0; padding-left: 18px; }
+  .result { font-size: 13px; margin-right: auto; }
+  .result.ok { color: var(--up); } .result.bad { color: var(--down); }
+  .settings { max-width: 820px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 20px 20px; }
+  .note { color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 640px) { .form { grid-template-columns: 1fr; } header, .view, .banner { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Service Watcher</h1>
+  <nav id="tabs">
+    <button data-tab="monitors" class="active">Monitors</button>
+    <button data-tab="alerts">Alert channels</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div class="summary" id="summary"></div>
+</header>
+<div id="banners"></div>
+<div class="view" id="view-monitors">
+  <div class="toolbar">
+    <input id="q" placeholder="Search name, target, tag…" size="24">
+    <select id="status">
+      <option value="">All statuses</option>
+      <option>down</option><option>degraded</option><option>up</option><option>pending</option>
+      <option>paused</option><option>maintenance</option><option>disabled</option>
+    </select>
+    <span class="spacer"></span>
+    <button class="primary edit-only" data-new="monitor">+ Add monitor</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <h2>Recent events</h2>
+  <table id="events"></table>
+</div>
+<div class="view" id="view-alerts" hidden>
+  <div class="toolbar">
+    <span class="note">Channels receive alerts from the monitors that list them. Use <code>${ENV_VAR}</code> in any field to keep secrets in <code>.env</code>.</span>
+    <span class="spacer"></span>
+    <button class="primary edit-only" data-new="alert">+ Add channel</button>
+  </div>
+  <div class="grid" id="alert-grid"></div>
+</div>
+<div class="view" id="view-settings" hidden>
+  <div class="settings" id="settings"></div>
+</div>
+<dialog id="dlg"></dialog>
+
+<script>
+// ───────────────────────── helpers ─────────────────────────
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
+const color = (s) => `var(--${s === "reminder" ? "down" : s === "test" ? "maintenance" : s})`;
+const ago = (ts) => {
+  if (!ts) return "never";
+  const s = Math.round((Date.now() - ts) / 1000);
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+};
+const pct = (u) => (u?.uptime == null ? "—" : `${u.uptime.toFixed(u.uptime === 100 ? 0 : 2)}%`);
+const ms = (n) => (n == null ? "—" : n < 1 ? "<1ms" : `${Math.round(n)}ms`);
+
+const params = new URLSearchParams(location.search);
+let token = params.get("token");
+try { if (token) localStorage.setItem("watcher-token", token); else token = localStorage.getItem("watcher-token"); } catch {}
+function setToken(t) {
+  token = t || null;
+  try { t ? localStorage.setItem("watcher-token", t) : localStorage.removeItem("watcher-token"); } catch {}
+}
+
+async function api(path, method = "GET", body) {
+  const headers = {};
+  if (token) headers.authorization = `Bearer ${token}`;
+  if (body !== undefined) headers["content-type"] = "application/json";
+  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+// ───────────────────────── state ─────────────────────────
+const state = { config: null, version: null, canEdit: false, authError: null, runtime: new Map(), events: [], fileProblems: [], restartRequired: false, path: "" };
+const cfg = () => state.config ?? { monitors: [], alerts: {}, defaults: {} };
+const alertNames = () => Object.keys(cfg().alerts ?? {});
+
+// ───────────────────────── form schema ─────────────────────────
+// t: text | secret | number | duration | bool | select | list | lines | textarea | kv | routes | multi | maintenance | jsonAsserts
+const F = (k, label, t, o = {}) => ({ k, label, t, ...o });
+const S = (section) => ({ section });
+const EVENTS = ["down", "up", "degraded", "reminder"];
+
+const MON_GENERAL = [
+  S("General"),
+  F("name", "Name", "text", { req: true, ph: "my-website" }),
+  F("type", "Type", "select", { req: true, options: ["http", "tcp", "udp", "dns", "command"], labels: { http: "HTTP(S) / website", tcp: "TCP port", udp: "UDP port", dns: "DNS record", command: "Shell command" }, retype: true }),
+  F("description", "Description", "text", { wide: true, ph: "Shown in alerts" }),
+  F("tags", "Tags", "list", { ph: "prod, web" }),
+  F("enabled", "Enabled", "bool", { def: true }),
+];
+const MON_TYPES = {
+  http: [
+    S("Request"),
+    F("url", "URL", "text", { req: true, wide: true, ph: "https://example.com/health" }),
+    F("method", "Method", "select", { options: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], def: "GET" }),
+    F("followRedirects", "Follow redirects", "bool", { def: true }),
+    F("headers", "Request headers", "kv", { wide: true }),
+    F("body", "Request body", "textarea", { wide: true, help: "JSON entered here is sent as JSON. Set a content-type header if your API needs one." }),
+    S("What counts as healthy"),
+    F("expectStatus", "Expected status", "list", { ph: "2xx, 3xx", help: "Codes, classes (2xx) or ranges (200-204)" }),
+    F("certExpiryDays", "Warn when TLS cert expires within (days)", "number", { ph: "off" }),
+    F("contains", "Body must contain", "lines", { help: "One per line; all must appear" }),
+    F("notContains", "Body must NOT contain", "lines", { help: "One per line" }),
+    F("matches", "Body matches regex", "text", { wide: true, ph: "e.g. \"status\":\\s*\"ok\"" }),
+    F("json", "JSON assertions", "jsonAsserts", { wide: true }),
+    F("expectHeaders", "Response headers must contain", "kv", { wide: true }),
+    F("ignoreTls", "Ignore TLS errors", "bool", { def: false }),
+  ],
+  tcp: [
+    S("Connection"),
+    F("host", "Host", "text", { req: true, ph: "db.example.com" }),
+    F("port", "Port", "number", { req: true, ph: "5432" }),
+    F("tls", "Use TLS", "bool", { def: false }),
+    F("ignoreTls", "Ignore TLS errors", "bool", { def: false }),
+    F("send", "Send after connecting", "text", { ph: "PING\\r\\n" }),
+    F("expect", "Expect in response", "text", { ph: "+PONG" }),
+    F("encoding", "Payload encoding", "select", { options: ["utf8", "hex", "base64"], def: "utf8" }),
+    F("certExpiryDays", "Warn when TLS cert expires within (days)", "number", { ph: "off" }),
+  ],
+  udp: [
+    S("Packet"),
+    F("host", "Host", "text", { req: true, ph: "1.1.1.1" }),
+    F("port", "Port", "number", { req: true, ph: "53" }),
+    F("send", "Payload to send", "text", { req: true, wide: true }),
+    F("encoding", "Payload encoding", "select", { options: ["utf8", "hex", "base64"], def: "utf8" }),
+    F("expectResponse", "Require a reply", "bool", { def: true, help: "Off = pass if no ICMP 'port unreachable' comes back" }),
+    F("expect", "Expect in reply", "text", { wide: true, help: "Same encoding as the payload" }),
+  ],
+  dns: [
+    S("Query"),
+    F("hostname", "Hostname", "text", { req: true, ph: "example.com" }),
+    F("recordType", "Record type", "select", { options: ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "PTR", "SOA", "CAA"], def: "A" }),
+    F("resolvers", "Resolvers", "list", { ph: "system default", help: "e.g. 1.1.1.1, 8.8.8.8" }),
+    F("expect", "Answer must include", "list", { ph: "93.184.215.14" }),
+  ],
+  command: [
+    S("Command"),
+    F("command", "Command", "text", { req: true, wide: true, ph: "test -f /var/run/app.pid", help: "Runs on the watcher host via sh -c" }),
+    F("expectExitCode", "Expected exit code", "number", { def: 0 }),
+    F("contains", "Output must contain", "text"),
+  ],
+};
+const TIMING = [
+  S("Timing"),
+  F("interval", "Check every", "duration", { inherit: true, def: "60s" }),
+  F("timeout", "Timeout", "duration", { inherit: true, def: "10s" }),
+  F("retries", "Retries per check", "number", { inherit: true, def: 0, help: "Extra attempts before a check counts as failed" }),
+  F("retryDelay", "Retry delay", "duration", { inherit: true, def: "2s" }),
+  F("failureThreshold", "Failed checks before DOWN", "number", { inherit: true, def: 1 }),
+  F("recoveryThreshold", "Passing checks before UP", "number", { inherit: true, def: 1 }),
+  F("degradedLatency", "Degraded when slower than", "duration", { inherit: true, def: "off" }),
+];
+const ALERTING = [
+  S("Alerting"),
+  F("alerts", "Alert channels", "routes", { inherit: true, wide: true, help: "“After” escalates: that channel is only alerted if the outage lasts this long." }),
+  F("notifyOn", "Notify on", "multi", { inherit: true, options: EVENTS, def: EVENTS }),
+  F("renotify", "Remind while down every", "duration", { inherit: true, def: "off" }),
+  F("maintenance", "Maintenance windows", "maintenance", { wide: true, help: "No checks or alerts during these windows." }),
+];
+const monitorSchema = (type) => [...MON_GENERAL, ...(MON_TYPES[type] ?? []), ...TIMING, ...ALERTING];
+const TYPE_KEYS = new Set(Object.values(MON_TYPES).flat().map((f) => f.k).filter(Boolean));
+
+const SECRET_HELP = "Tip: write ${ENV_VAR} to read it from .env";
+const ALERT_TYPES = {
+  discord: [
+    F("url", "Webhook URL", "secret", { req: true, wide: true, ph: "https://discord.com/api/webhooks/…", help: "Channel settings → Integrations → Webhooks. " + SECRET_HELP }),
+    F("username", "Bot name", "text", { ph: "Service Watcher" }),
+    F("avatarUrl", "Avatar URL", "text"),
+    F("mentions", "Mentions on outage", "list", { ph: "@here, <@&ROLE_ID>", help: "Pinged on down/reminder only" }),
+    F("threadId", "Forum thread ID", "text"),
+  ],
+  slack: [
+    F("url", "Webhook URL", "secret", { req: true, wide: true, ph: "https://hooks.slack.com/services/…", help: SECRET_HELP }),
+    F("mentions", "Mentions on outage", "list", { ph: "<!channel>" }),
+  ],
+  telegram: [
+    F("botToken", "Bot token", "secret", { req: true, wide: true, help: "From @BotFather. " + SECRET_HELP }),
+    F("chatId", "Chat ID", "text", { req: true, ph: "-1001234567890" }),
+    F("threadId", "Topic/thread ID", "number"),
+    F("silentRecovery", "Send recoveries silently", "bool", { def: false }),
+  ],
+  ntfy: [
+    F("server", "Server", "text", { def: "https://ntfy.sh" }),
+    F("topic", "Topic", "text", { req: true }),
+    F("token", "Access token", "secret"),
+    F("username", "Username", "text"),
+    F("password", "Password", "secret"),
+    F("priorityDown", "Priority when down (1-5)", "number", { def: 5 }),
+    F("priorityUp", "Priority when up (1-5)", "number", { def: 3 }),
+  ],
+  gotify: [
+    F("server", "Server", "text", { req: true, ph: "https://gotify.example.com" }),
+    F("token", "App token", "secret", { req: true }),
+    F("priorityDown", "Priority when down", "number", { def: 8 }),
+    F("priorityUp", "Priority when up", "number", { def: 4 }),
+  ],
+  pushover: [
+    F("token", "App token", "secret", { req: true }),
+    F("user", "User key", "secret", { req: true }),
+    F("device", "Device", "text"),
+    F("sound", "Sound", "text"),
+    F("priorityDown", "Priority when down (-2..2)", "number", { def: 1 }),
+    F("priorityUp", "Priority when up (-2..2)", "number", { def: 0 }),
+  ],
+  webhook: [
+    F("url", "URL", "secret", { req: true, wide: true }),
+    F("method", "Method", "select", { options: ["POST", "PUT", "PATCH", "GET"], def: "POST" }),
+    F("headers", "Headers", "kv", { wide: true }),
+    F("body", "Body template", "textarea", { wide: true, help: "Empty sends the full event as JSON. Use {{monitor.name|json}} for JSON-safe values." }),
+  ],
+  command: [
+    F("command", "Command", "text", { req: true, wide: true, help: "Runs via sh -c with the event JSON on stdin and WATCHER_TITLE, WATCHER_MESSAGE, WATCHER_KIND… in the environment" }),
+    F("timeout", "Timeout", "duration", { def: "15s" }),
+  ],
+  console: [],
+};
+const alertSchema = (type) => [
+  S("Channel"),
+  F("name", "Name", "text", { req: true, ph: "discord-ops" }),
+  F("type", "Type", "select", { req: true, options: Object.keys(ALERT_TYPES), labels: { discord: "Discord webhook", slack: "Slack webhook", telegram: "Telegram bot", ntfy: "ntfy", gotify: "Gotify", pushover: "Pushover", webhook: "Generic webhook", command: "Shell command", console: "Console (log only)" }, retype: true }),
+  ...(ALERT_TYPES[type]?.length ? [S("Connection"), ...ALERT_TYPES[type]] : []),
+  S("Delivery"),
+  F("events", "Send these events", "multi", { options: EVENTS, def: EVENTS }),
+  F("retries", "Delivery retries", "number", { def: 2 }),
+  F("title", "Title template", "text", { wide: true, ph: "{{emoji}} {{monitor.name}} is {{kindUpper}}" }),
+  F("message", "Message template", "textarea", { wide: true, help: "Variables: monitor.name, monitor.target, result.message, latency, duration, tags, kind, status, time" }),
+];
+const ALERT_TYPE_KEYS = new Set(Object.values(ALERT_TYPES).flat().map((f) => f.k));
+
+const SETTINGS = {
+  defaults: [...TIMING, ...ALERTING].map((f) => ({ ...f, inherit: false })),
+  server: [
+    S("Web server"),
+    F("host", "Listen address", "text", { def: "127.0.0.1", help: "Restart required. Use 0.0.0.0 to expose it — then set a token." }),
+    F("port", "Port", "number", { def: 8080, help: "Restart required" }),
+    F("token", "Access token", "secret", { help: "Required for changes when set. Leave empty for local-only use." }),
+    F("protectReads", "Require token to view the dashboard", "bool", { def: false }),
+  ],
+  storage: [
+    S("History"),
+    F("retention", "Keep history for", "duration", { def: "30d" }),
+    F("path", "Database file", "text", { def: "./data/watcher.db", help: "Restart required" }),
+  ],
+  log: [
+    S("Logging"),
+    F("level", "Log level", "select", { options: ["debug", "info", "warn", "error"], def: "info" }),
+    F("format", "Log format", "select", { options: ["pretty", "json"], def: "pretty" }),
+  ],
+};
+
+// ───────────────────────── form rendering ─────────────────────────
+const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const toLocalInput = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
+const display = (v) => (v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v));
+
+const ROW = {
+  kv: ([k, v] = ["", ""]) => `<div class="ri"><input data-f="k" placeholder="name" value="${esc(k)}"><input data-f="v" placeholder="value" value="${esc(v)}"><button type="button" data-remove>✕</button></div>`,
+  routes: (r = {}) => {
+    const to = typeof r === "string" ? r : r.to ?? "";
+    const after = typeof r === "string" ? "" : display(r.after);
+    const names = alertNames();
+    if (to && !names.includes(to)) names.push(to);
+    return `<div class="ri"><select data-f="to">${names.map((n) => `<option ${n === to ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+      <input class="short" data-f="after" placeholder="immediately" value="${esc(after)}" title="Only alert this channel if still down after this long, e.g. 15m">
+      <button type="button" data-remove>✕</button></div>`;
+  },
+  jsonAsserts: (a = {}) => {
+    const op = a.exists === false ? "missing" : a.exists === true ? "exists" : a.matches !== undefined ? "matches" : "equals";
+    const val = op === "matches" ? a.matches : op === "equals" && a.equals !== undefined ? (typeof a.equals === "string" ? a.equals : JSON.stringify(a.equals)) : "";
+    return `<div class="ri"><input data-f="path" placeholder="data.status" value="${esc(a.path)}">
+      <select data-f="op" style="flex:0 0 110px">${["equals", "matches", "exists", "missing"].map((o) => `<option ${o === op ? "selected" : ""}>${o}</option>`).join("")}</select>
+      <input data-f="val" placeholder="value" value="${esc(val)}"><button type="button" data-remove>✕</button></div>`;
+  },
+  maintenance: (w = {}) => {
+    const kind = w.from || w.until ? "once" : "weekly";
+    const days = asList(w.days).map((d) => String(d).toLowerCase().slice(0, 3));
+    return `<div class="ri mw" data-kind="${kind}">
+      <select data-f="kind" style="flex:0 0 auto"><option value="weekly" ${kind === "weekly" ? "selected" : ""}>Recurring</option><option value="once" ${kind === "once" ? "selected" : ""}>One-off</option></select>
+      <span class="weekly days">${DAYS.map((d) => `<label><input type="checkbox" data-day="${d}" ${days.includes(d) ? "checked" : ""}>${d[0].toUpperCase() + d.slice(1, 2)}</label>`).join("")}</span>
+      <span class="weekly">from <input type="time" data-f="start" value="${esc(w.start)}"> to <input type="time" data-f="end" value="${esc(w.end)}"></span>
+      <span class="once">from <input type="datetime-local" data-f="from" value="${w.from ? toLocalInput(w.from) : ""}"> until <input type="datetime-local" data-f="until" value="${w.until ? toLocalInput(w.until) : ""}"></span>
+      <input class="short weekly" data-f="timezone" placeholder="server timezone" value="${esc(w.timezone)}" title="IANA timezone, e.g. Europe/London">
+      <button type="button" data-remove>✕</button></div>`;
+  },
+};
+const ADD_LABEL = { kv: "+ Add", routes: "+ Add channel", jsonAsserts: "+ Add assertion", maintenance: "+ Add window" };
+
+function placeholder(f, ctx) {
+  if (f.inherit && ctx.inherit && ctx.defaults[f.k] !== undefined) return `default: ${display(ctx.defaults[f.k])}`;
+  return f.ph ?? (f.def !== undefined ? display(f.def) : "");
+}
+
+function inputHtml(f, v, ctx) {
+  const ph = esc(placeholder(f, ctx));
+  switch (f.t) {
+    case "text": case "duration": case "number":
+      return `<input data-in value="${esc(f.k === "command" && Array.isArray(v) ? JSON.stringify(v) : display(v))}" placeholder="${ph}" ${f.t === "number" ? 'inputmode="numeric"' : ""}>`;
+    case "secret":
+      return `<div class="secret"><input data-in type="password" autocomplete="off" value="${esc(display(v))}" placeholder="${ph}"><button type="button" data-reveal>Show</button></div>`;
+    case "textarea":
+      return `<textarea data-in placeholder="${ph}">${esc(v == null ? "" : typeof v === "object" ? JSON.stringify(v, null, 2) : v)}</textarea>`;
+    case "bool": {
+      const on = v === undefined ? f.def : v === true || v === "true";
+      return `<label class="check"><input data-in type="checkbox" ${on ? "checked" : ""}> ${f.checkLabel ?? "Yes"}</label>`;
+    }
+    case "select": {
+      const cur = v ?? f.def ?? f.options[0];
+      return `<select data-in ${f.retype ? "data-retype" : ""}>${f.options.map((o) => `<option value="${esc(o)}" ${String(o) === String(cur) ? "selected" : ""}>${esc(f.labels?.[o] ?? o)}</option>`).join("")}</select>`;
+    }
+    case "list":
+      return `<input data-in value="${esc(asList(v).join(", "))}" placeholder="${ph}">`;
+    case "lines":
+      return `<textarea data-in placeholder="${ph}" style="min-height:52px">${esc(asList(v).join("\n"))}</textarea>`;
+    case "multi": {
+      const eff = v ?? (f.inherit && ctx.inherit ? ctx.defaults[f.k] : undefined) ?? f.def;
+      return `<div class="checks">${f.options.map((o) => `<label class="check"><input type="checkbox" data-opt="${o}" ${asList(eff).includes(o) ? "checked" : ""}>${o}</label>`).join("")}</div>`;
+    }
+    case "routes": {
+      const inherited = f.inherit && ctx.inherit && v === undefined;
+      const defNames = asList(ctx.defaults.alerts).map((r) => (typeof r === "string" ? r : r.to)).join(", ") || "none";
+      const toggle = f.inherit && ctx.inherit
+        ? `<label class="check"><input type="checkbox" data-inherit ${inherited ? "checked" : ""}> Use default channels (${esc(defNames)})</label>` : "";
+      const rows = alertNames().length || asList(v).length
+        ? `<div class="rows" data-rows="routes">${asList(v).map((r) => ROW.routes(r)).join("")}</div><div><button type="button" class="link" data-add="routes">${ADD_LABEL.routes}</button></div>`
+        : `<small>No alert channels yet — add one under “Alert channels”.</small>`;
+      return `${toggle}<div class="route-box" ${inherited ? "hidden" : ""}>${rows}</div>`;
+    }
+    case "kv":
+      return `<div class="rows" data-rows="kv">${Object.entries(v ?? {}).map((e) => ROW.kv(e)).join("")}</div><div><button type="button" class="link" data-add="kv">${ADD_LABEL.kv}</button></div>`;
+    case "jsonAsserts": case "maintenance":
+      return `<div class="rows" data-rows="${f.t}">${asList(v).map((x) => ROW[f.t](x)).join("")}</div><div><button type="button" class="link" data-add="${f.t}">${ADD_LABEL[f.t]}</button></div>`;
+  }
+}
+
+function formHtml(schema, obj, ctx) {
+  return schema.map((f) => {
+    if (f.section) return `<h4>${esc(f.section)}</h4>`;
+    const wide = f.wide || ["kv", "routes", "maintenance", "jsonAsserts", "textarea", "lines"].includes(f.t);
+    return `<div class="field ${wide ? "wide" : ""}" data-k="${f.k}">
+      <label>${esc(f.label)}${f.req ? ' <span class="req">*</span>' : ""}</label>
+      ${inputHtml(f, obj[f.k], ctx)}
+      ${f.help ? `<small>${esc(f.help)}</small>` : ""}</div>`;
+  }).join("");
+}
+
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+const maybeNum = (s) => (/^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s);
+
+/** Reads one field. Returns undefined to remove the key (use the default). */
+function readField(el, f, ctx, original) {
+  const input = el.querySelector("[data-in]");
+  switch (f.t) {
+    case "text": case "secret": case "duration": {
+      const s = input.value.trim();
+      if (!s) return undefined;
+      if (f.k === "command" && s.startsWith("[")) try { return JSON.parse(s); } catch {}
+      return f.t === "duration" ? maybeNum(s) : s;
+    }
+    case "number": { const s = input.value.trim(); return s === "" ? undefined : maybeNum(s); }
+    case "textarea": {
+      const s = input.value;
+      if (!s.trim()) return undefined;
+      if (f.k === "body" && typeof original === "object") try { return JSON.parse(s); } catch {}
+      return s;
+    }
+    case "bool": return input.checked === f.def ? undefined : input.checked;
+    case "select": return f.req || input.value !== String(f.def ?? f.options[0]) ? maybeSelect(input.value, f) : undefined;
+    case "list": { const l = input.value.split(",").map((s) => s.trim()).filter(Boolean); return l.length ? l : undefined; }
+    case "lines": { const l = input.value.split("\n").map((s) => s.trim()).filter(Boolean); return l.length ? l : undefined; }
+    case "multi": {
+      const picked = [...el.querySelectorAll("[data-opt]")].filter((c) => c.checked).map((c) => c.dataset.opt);
+      const eff = (f.inherit && ctx.inherit ? ctx.defaults[f.k] : undefined) ?? f.def;
+      return sameSet(picked, asList(eff)) ? undefined : picked;
+    }
+    case "routes": {
+      if (el.querySelector("[data-inherit]")?.checked) return undefined;
+      const routes = rows(el).map((r) => {
+        const to = r.querySelector("[data-f=to]").value;
+        const after = r.querySelector("[data-f=after]").value.trim();
+        return after ? { to, after } : to;
+      });
+      // An explicit empty list means "no alerts" for a monitor, but just "none" for the defaults.
+      return routes.length || (f.inherit && ctx.inherit) ? routes : undefined;
+    }
+    case "kv": {
+      const o = {};
+      for (const r of rows(el)) { const k = r.querySelector("[data-f=k]").value.trim(); if (k) o[k] = r.querySelector("[data-f=v]").value; }
+      return Object.keys(o).length ? o : undefined;
+    }
+    case "jsonAsserts": {
+      const list = rows(el).map((r) => {
+        const path = r.querySelector("[data-f=path]").value.trim();
+        const op = r.querySelector("[data-f=op]").value;
+        const val = r.querySelector("[data-f=val]").value;
+        if (!path) return null;
+        if (op === "exists") return { path, exists: true };
+        if (op === "missing") return { path, exists: false };
+        if (op === "matches") return { path, matches: val };
+        let equals = val;
+        try { equals = JSON.parse(val); } catch {}
+        return { path, equals };
+      }).filter(Boolean);
+      return list.length ? list : undefined;
+    }
+    case "maintenance": {
+      const list = rows(el).map((r) => {
+        const g = (n) => r.querySelector(`[data-f=${n}]`).value.trim();
+        if (r.dataset.kind === "once") {
+          if (!g("from") || !g("until")) return null;
+          return { from: new Date(g("from")).toISOString(), until: new Date(g("until")).toISOString() };
+        }
+        if (!g("start") || !g("end")) return null;
+        const w = { start: g("start"), end: g("end") };
+        const days = [...r.querySelectorAll("[data-day]")].filter((c) => c.checked).map((c) => c.dataset.day);
+        if (days.length && days.length < 7) w.days = days;
+        if (g("timezone")) w.timezone = g("timezone");
+        return w;
+      }).filter(Boolean);
+      return list.length ? list : undefined;
+    }
+  }
+}
+const maybeSelect = (v, f) => (f.options.every((o) => typeof o === "number") ? Number(v) : v);
+const rows = (el) => [...el.querySelectorAll(":scope .rows > .ri")];
+
+/** Applies form values onto a copy of `base`, keeping keys the form doesn't know about. */
+function collect(container, schema, base, ctx) {
+  const obj = clone(base) ?? {};
+  for (const f of schema) {
+    if (f.section) continue;
+    const el = container.querySelector(`.field[data-k="${f.k}"]`);
+    if (!el) continue;
+    const v = readField(el, f, ctx, base[f.k]);
+    if (v === undefined) delete obj[f.k]; else obj[f.k] = v;
+  }
+  return obj;
+}
+
+function missingRequired(container, schema) {
+  return schema.filter((f) => f.req && !f.section).filter((f) => {
+    const el = container.querySelector(`.field[data-k="${f.k}"] [data-in]`);
+    return el && !el.value.trim();
+  }).map((f) => `${f.label} is required`);
+}
+
+// Delegated handlers shared by every form.
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (t.matches("[data-add]")) {
+    t.closest(".field").querySelector(".rows").insertAdjacentHTML("beforeend", ROW[t.dataset.add]());
+  } else if (t.matches("[data-remove]")) {
+    t.closest(".ri").remove();
+  } else if (t.matches("[data-reveal]")) {
+    const i = t.previousElementSibling;
+    i.type = i.type === "password" ? "text" : "password";
+    t.textContent = i.type === "password" ? "Show" : "Hide";
+  }
+});
+document.addEventListener("change", (ev) => {
+  const t = ev.target;
+  if (t.matches("[data-f=kind]")) t.closest(".mw").dataset.kind = t.value;
+  if (t.matches("[data-inherit]")) t.closest(".field").querySelector(".route-box").hidden = t.checked;
+});
+
+// ───────────────────────── saving ─────────────────────────
+function problemsHtml(err, problems) {
+  return `<div class="problems"><b>${esc(err || "Could not save")}</b>${problems?.length ? `<ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}</div>`;
+}
+
+/** Writes the whole config. Returns null on success or an error HTML snippet. */
+async function saveConfig(next) {
+  const res = await api("/api/config", "PUT", { config: next, version: state.version });
+  if (res.ok) {
+    applyConfigResponse(res.data);
+    renderAll();
+    return null;
+  }
+  if (res.status === 409) await loadConfig();
+  return problemsHtml(res.data.error, res.data.problems);
+}
+
+function applyConfigResponse(d) {
+  state.config = d.config;
+  state.version = d.version;
+  state.fileProblems = d.fileProblems ?? [];
+  state.restartRequired = d.restartRequired;
+  state.path = d.path;
+  state.envOverrides = d.envOverrides ?? [];
+}
+
+// ───────────────────────── dialogs ─────────────────────────
+const dlg = $("dlg");
+
+function openDialog({ title, schema, obj, ctx, onSave, onDelete, onTest, onRetype }) {
+  dlg.innerHTML = `<form class="dlg" method="dialog" novalidate>
+    <div class="dlg-head"><h3>${esc(title)}</h3></div>
+    <div class="dlg-body"><div class="form">${formHtml(schema, obj, ctx)}</div><div id="dlg-msg"></div></div>
+    <div class="dlg-foot">
+      <span class="result" id="dlg-result"></span>
+      ${onDelete ? `<button type="button" class="danger" id="dlg-del">Delete</button>` : ""}
+      ${onTest ? `<button type="button" id="dlg-test">Test</button>` : ""}
+      <button type="button" id="dlg-cancel">Cancel</button>
+      <button type="submit" class="primary" id="dlg-save">Save</button>
+    </div></form>`;
+  const body = dlg.querySelector(".form");
+  const msg = $("dlg-msg");
+  const read = () => collect(body, schema, obj, ctx);
+  const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } };
+
+  dlg.querySelector("[data-retype]")?.addEventListener("change", (ev) => onRetype(read(), ev.target.value));
+  $("dlg-cancel").onclick = () => dlg.close();
+  dlg.querySelector("form").onsubmit = (ev) => {
+    ev.preventDefault();
+    const missing = missingRequired(body, schema);
+    if (missing.length) return (msg.innerHTML = problemsHtml("Please fill in the required fields", missing));
+    busy($("dlg-save"), async () => {
+      const err = await onSave(read());
+      if (err) msg.innerHTML = err; else dlg.close();
+    });
+  };
+  if (onDelete) $("dlg-del").onclick = () => busy($("dlg-del"), async () => {
+    const err = await onDelete();
+    if (err === false) return;
+    if (err) msg.innerHTML = err; else dlg.close();
+  });
+  if (onTest) $("dlg-test").onclick = () => busy($("dlg-test"), async () => {
+    const missing = missingRequired(body, schema);
+    if (missing.length) return (msg.innerHTML = problemsHtml("Please fill in the required fields", missing));
+    msg.innerHTML = "";
+    $("dlg-result").className = "result";
+    $("dlg-result").textContent = "Testing…";
+    const r = await onTest(read());
+    $("dlg-result").className = `result ${r.ok ? "ok" : "bad"}`;
+    $("dlg-result").textContent = r.text;
+    if (r.problems) msg.innerHTML = problemsHtml("Fix these first", r.problems);
+  });
+  if (!dlg.open) dlg.showModal();
+}
+
+function openMonitor(name, draft) {
+  const c = cfg();
+  const existing = name != null ? c.monitors.find((m) => m.name === name) : undefined;
+  const obj = draft ?? clone(existing) ?? { name: "", type: "http" };
+  const ctx = { inherit: true, defaults: c.defaults ?? {} };
+  openDialog({
+    title: existing ? `Edit ${existing.name}` : "New monitor",
+    schema: monitorSchema(obj.type),
+    obj, ctx,
+    onRetype: (cur, type) => {
+      for (const k of Object.keys(cur)) if (TYPE_KEYS.has(k) && !MON_TYPES[type].some((f) => f.k === k)) delete cur[k];
+      openMonitor(name, { ...cur, type });
+    },
+    onSave: (m) => {
+      const next = clone(c);
+      next.monitors = asList(next.monitors);
+      const idx = existing ? next.monitors.findIndex((x) => x.name === existing.name) : -1;
+      if (idx >= 0) next.monitors[idx] = m; else next.monitors.push(m);
+      return saveConfig(next);
+    },
+    onDelete: existing && (async () => {
+      if (!confirm(`Delete monitor “${existing.name}”? Its history stays in the database.`)) return false;
+      const next = clone(c);
+      next.monitors = next.monitors.filter((x) => x.name !== existing.name);
+      return saveConfig(next);
+    }),
+    onTest: async (m) => {
+      const res = await api("/api/config/test-monitor", "POST", { monitor: m });
+      if (!res.ok) return { ok: false, text: res.data.error ?? "Test failed", problems: res.data.problems };
+      const r = res.data;
+      return { ok: r.ok, text: `${r.ok ? (r.degraded ? "⚠ Degraded" : "✓ Healthy") : "✗ Failing"} — ${r.message} (${ms(r.latencyMs)})` };
+    },
+  });
+}
+
+function openAlert(name, draft) {
+  const c = cfg();
+  const existing = name != null ? c.alerts?.[name] : undefined;
+  const obj = draft ?? (existing ? { name, ...clone(existing) } : { name: "", type: "discord" });
+  if (Array.isArray(obj.events)) obj.events = obj.events.filter((e) => e !== "test");
+  const ctx = { inherit: false, defaults: {} };
+  openDialog({
+    title: existing ? `Edit ${name}` : "New alert channel",
+    schema: alertSchema(obj.type),
+    obj, ctx,
+    onRetype: (cur, type) => {
+      for (const k of Object.keys(cur)) if (ALERT_TYPE_KEYS.has(k) && !ALERT_TYPES[type].some((f) => f.k === k)) delete cur[k];
+      openAlert(name, { ...cur, type });
+    },
+    onSave: ({ name: newName, ...a }) => {
+      const next = clone(c);
+      if (newName !== name && next.alerts?.[newName]) return problemsHtml(`A channel named “${newName}” already exists`);
+      // Rebuild the map to keep its order, and follow renames in every monitor's routes.
+      const alerts = {};
+      for (const [k, v] of Object.entries(next.alerts ?? {})) alerts[k === name ? newName : k] = k === name ? a : v;
+      if (!existing) alerts[newName] = a;
+      next.alerts = alerts;
+      if (existing && newName !== name) renameRoutes(next, name, newName);
+      return saveConfig(next);
+    },
+    onDelete: existing && (async () => {
+      const users = usersOf(name);
+      if (!confirm(users.length ? `Delete “${name}”? It will also be removed from: ${users.join(", ")}.` : `Delete “${name}”?`)) return false;
+      const next = clone(c);
+      delete next.alerts[name];
+      renameRoutes(next, name, null);
+      return saveConfig(next);
+    }),
+    onTest: async ({ name: n, ...a }) => {
+      const res = await api("/api/config/test-alert", "POST", { name: n, alerter: a });
+      if (!res.ok) return { ok: false, text: res.data.error ?? "Test failed", problems: res.data.problems };
+      return { ok: res.data.ok, text: res.data.ok ? "✓ Test alert sent — check the channel" : `✗ ${res.data.error}` };
+    },
+  });
+}
+
+const routeTo = (r) => (typeof r === "string" ? r : r?.to);
+function usersOf(alertName) {
+  const c = cfg();
+  const users = asList(c.monitors).filter((m) => asList(m.alerts).some((r) => routeTo(r) === alertName)).map((m) => m.name);
+  if (asList(c.defaults?.alerts).some((r) => routeTo(r) === alertName)) users.unshift("defaults");
+  return users;
+}
+/** Renames (or removes, when `to` is null) an alert channel in every route list. */
+function renameRoutes(c, from, to) {
+  const fix = (list) => list
+    .filter((r) => to !== null || routeTo(r) !== from)
+    .map((r) => (routeTo(r) !== from ? r : typeof r === "string" ? to : { ...r, to }));
+  for (const m of asList(c.monitors)) if (Array.isArray(m.alerts)) m.alerts = fix(m.alerts);
+  if (c.defaults && Array.isArray(c.defaults.alerts)) c.defaults.alerts = fix(c.defaults.alerts);
+}
+
+// ───────────────────────── views ─────────────────────────
+function bars(history) {
+  if (!history?.length) return `<div class="bars empty">no data yet</div>`;
+  const max = Math.max(1, ...history.map((h) => h.latency));
+  return `<div class="bars">${history.map((h) => {
+    const cls = !h.ok ? "fail" : h.degraded ? "slow" : "";
+    return `<span class="${cls}" style="height:${Math.max(12, (h.latency / max) * 100)}%" title="${esc(new Date(h.ts).toLocaleString())}\n${ms(h.latency)} — ${esc(h.message)}"></span>`;
+  }).join("")}</div>`;
+}
+
+function monitorRows() {
+  // Show everything in the config (incl. disabled); fall back to runtime data when the config isn't readable.
+  const fromConfig = state.config ? asList(state.config.monitors) : [...state.runtime.values()].map((r) => ({ name: r.name, type: r.type, tags: r.tags }));
+  return fromConfig.map((m) => {
+    const rt = state.runtime.get(m.name);
+    return { name: m.name, tags: asList(m.tags ?? rt?.tags), type: m.type, rt, status: rt?.status ?? (m.enabled === false ? "disabled" : "pending"), target: rt?.target ?? m.url ?? (m.host ? `${m.host}:${m.port}` : m.hostname ?? display(m.command)) };
+  });
+}
+
+function renderMonitors() {
+  const q = $("q").value.toLowerCase();
+  const st = $("status").value;
+  const order = { down: 0, degraded: 1, pending: 2, maintenance: 3, paused: 4, up: 5, disabled: 6 };
+  const all = monitorRows();
+  const list = all
+    .filter((m) => !st || m.status === st)
+    .filter((m) => !q || [m.name, m.target, ...m.tags].some((s) => String(s ?? "").toLowerCase().includes(q)))
+    .sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name));
+
+  const counts = {};
+  for (const m of all) counts[m.status] = (counts[m.status] ?? 0) + 1;
+  $("summary").innerHTML = ["up", "degraded", "down", "paused", "maintenance", "disabled"]
+    .filter((s) => counts[s]).map((s) => `<span style="color:${color(s)}"><b>${counts[s]}</b> ${s}</span>`).join("");
+
+  if (!all.length) {
+    $("grid").innerHTML = `<div class="empty"><p>No monitors yet.</p>${state.canEdit ? `<button class="primary" data-new="monitor">+ Add your first monitor</button>` : ""}</div>`;
+    return;
+  }
+  $("grid").innerHTML = list.length ? list.map((m) => {
+    const rt = m.rt;
+    return `<div class="card" style="--c:${color(m.status)}">
+      <div class="row"><span class="name" title="${esc(rt?.description ?? m.name)}">${esc(m.name)}</span><span class="badge">${m.status}</span></div>
+      <div class="target mono" title="${esc(m.target)}">${esc(m.target)}</div>
+      ${rt ? bars(rt.history) : ""}
+      <div class="msg">${esc(rt?.lastResult?.message ?? (m.status === "disabled" ? "Disabled — not being checked" : "No checks yet"))}</div>
+      ${rt ? `<div class="stats">
+        <span><b>${ms(rt.lastResult?.latencyMs)}</b> latency</span>
+        <span><b>${pct(rt.uptime["24h"])}</b> 24h</span><span><b>${pct(rt.uptime["7d"])}</b> 7d</span><span><b>${pct(rt.uptime["30d"])}</b> 30d</span>
+      </div>` : ""}
+      <div class="row">
+        <div class="chips">${m.tags.map((t) => `<span class="chip" data-tag="${esc(t)}">${esc(t)}</span>`).join("")}</div>
+        ${rt ? `<span class="stats" style="margin-left:auto">checked ${ago(rt.lastCheckAt)}</span>` : ""}
+      </div>
+      <div class="actions">
+        ${rt ? `<button data-act="check" data-name="${esc(m.name)}">Check now</button>
+          <button data-act="${m.status === "paused" ? "resume" : "pause"}" data-name="${esc(m.name)}">${m.status === "paused" ? "Resume" : "Pause"}</button>` : ""}
+        ${state.canEdit ? `<button data-edit-monitor="${esc(m.name)}">Edit</button>` : ""}
+      </div>
+    </div>`;
+  }).join("") : `<div class="empty">No monitors match.</div>`;
+}
+
+function renderEvents() {
+  $("events").innerHTML = state.events.length ? state.events.map((e) => `
+    <tr style="--c:${color(e.kind)}"><td class="t">${esc(new Date(e.ts).toLocaleString())}</td><td class="k">${esc(e.kind)}</td>
+    <td><b>${esc(e.monitor)}</b></td><td>${esc(e.message)}</td></tr>`).join("")
+    : `<tr><td class="note">No events yet.</td></tr>`;
+}
+
+function alertSummary(a) {
+  try {
+    if (a.type === "telegram") return `chat ${a.chatId}`;
+    if (a.type === "ntfy") return `${a.server ?? "https://ntfy.sh"}/${a.topic}`;
+    if (a.type === "gotify") return a.server;
+    if (a.type === "command") return display(a.command);
+    if (a.type === "console") return "watcher log output";
+    if (a.type === "pushover") return "Pushover";
+    if (String(a.url).startsWith("${")) return `from ${a.url}`;
+    return new URL(a.url).host; // don't show the secret part of webhook URLs
+  } catch { return ""; }
+}
+
+function renderAlerts() {
+  const entries = Object.entries(cfg().alerts ?? {});
+  $("alert-grid").innerHTML = entries.length ? entries.map(([name, a]) => {
+    const users = usersOf(name);
+    const events = asList(a.events ?? EVENTS).filter((e) => e !== "test");
+    return `<div class="card">
+      <div class="row"><span class="name">${esc(name)}</span><span class="badge" style="--c:var(--muted)">${esc(a.type)}</span></div>
+      <div class="target mono">${esc(alertSummary(a))}</div>
+      <div class="chips">${events.map((e) => `<span class="chip">${e}</span>`).join("")}</div>
+      <div class="msg">${users.length ? `Used by ${esc(users.join(", "))}` : "Not used by any monitor yet"}</div>
+      <div class="actions">
+        <button data-test-alert="${esc(name)}">Send test</button>
+        ${state.canEdit ? `<button data-edit-alert="${esc(name)}">Edit</button>` : ""}
+      </div></div>`;
+  }).join("") : `<div class="empty"><p>No alert channels yet. Add Discord, Slack, Telegram, ntfy and more.</p>${state.canEdit ? `<button class="primary" data-new="alert">+ Add a channel</button>` : ""}</div>`;
+}
+
+function renderSettings() {
+  if (!state.canEdit) { $("settings").innerHTML = `<p class="note">Settings are not available: ${esc(state.authError ?? "no access")}</p>`; return; }
+  const c = cfg();
+  const ctx = { inherit: false, defaults: {} };
+  $("settings").innerHTML = `
+    <form id="settings-form" novalidate>
+      <h3 style="margin:14px 0 2px">Defaults for all monitors</h3>
+      <p class="note" style="margin:0">Monitors use these unless they override them. Maintenance windows here apply to every monitor.</p>
+      <div class="form" data-obj="defaults">${formHtml(SETTINGS.defaults, c.defaults ?? {}, ctx)}</div>
+      <div class="form" data-obj="server">${formHtml(SETTINGS.server, c.server ?? {}, ctx)}</div>
+      <div class="form" data-obj="storage">${formHtml(SETTINGS.storage, c.storage ?? {}, ctx)}</div>
+      <div class="form" data-obj="log">${formHtml(SETTINGS.log, c.log ?? {}, ctx)}</div>
+      <div id="settings-msg"></div>
+      <div class="toolbar" style="margin:18px 0 0">
+        <button type="submit" class="primary">Save settings</button>
+        <span class="note">Saved to <code>${esc(state.path)}</code> (comments in the file are not kept; the previous version is saved as <code>.bak</code>).</span>
+      </div>
+    </form>`;
+  // Values set through WATCHER_* environment variables can't be changed here.
+  for (const { name, key } of state.envOverrides ?? []) {
+    const [obj, k] = key.split(".");
+    const field = $("settings-form").querySelector(`[data-obj=${obj}] .field[data-k=${k}]`);
+    if (!field) continue;
+    field.querySelectorAll("input, button").forEach((el) => (el.disabled = true));
+    field.insertAdjacentHTML("beforeend", `<small style="color:var(--degraded)">Set by the ${name} environment variable, which overrides this value.</small>`);
+  }
+  $("settings-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const next = clone(c);
+    for (const box of $("settings-form").querySelectorAll("[data-obj]")) {
+      const key = box.dataset.obj;
+      const obj = collect(box, SETTINGS[key], c[key] ?? {}, ctx);
+      if (Object.keys(obj).length) next[key] = obj; else delete next[key];
+    }
+    const newToken = next.server?.token;
+    const btn = ev.submitter; btn.disabled = true;
+    const err = await saveConfig(next);
+    btn.disabled = false;
+    const tokenFromEnv = (state.envOverrides ?? []).some((o) => o.key === "server.token");
+    if (!err && !tokenFromEnv) {
+      // The server applies a new token immediately, so switch to it (env placeholders can't be resolved here).
+      if (newToken && !String(newToken).includes("${")) setToken(newToken); else if (!newToken) setToken(null);
+    }
+    $("settings-msg").innerHTML = err ?? `<p class="note" style="color:var(--up)">✓ Saved.</p>`;
+  };
+}
+
+function renderBanners() {
+  const b = [];
+  if (state.netError) b.push(`<div class="banner err">${esc(state.netError)}</div>`);
+  if (state.authError) {
+    b.push(`<div class="banner warn">${esc(state.authError)}
+      <form id="token-form" style="display:flex;gap:6px"><input type="password" id="token-in" placeholder="Access token" autocomplete="off"><button>Unlock</button></form></div>`);
+  }
+  if (state.fileProblems.length)
+    b.push(`<div class="banner err"><div><b>The config file on disk has errors, so the last valid version is still running.</b> Fix the file, or save from here to overwrite it.<pre>${esc(state.fileProblems.join("\n"))}</pre></div></div>`);
+  if (state.restartRequired) b.push(`<div class="banner warn">Server or storage settings changed — restart service-watcher to apply them.</div>`);
+  $("banners").innerHTML = b.join("");
+  const tf = $("token-form");
+  if (tf) tf.onsubmit = (ev) => { ev.preventDefault(); setToken($("token-in").value.trim()); refresh(true); };
+}
+
+function renderAll() {
+  document.querySelectorAll(".edit-only").forEach((el) => (el.hidden = !state.canEdit));
+  renderBanners();
+  renderMonitors();
+  renderEvents();
+  renderAlerts();
+}
+
+// ───────────────────────── data loading ─────────────────────────
+async function loadConfig() {
+  const res = await api("/api/config");
+  if (res.ok) {
+    const changed = res.data.version !== state.version;
+    applyConfigResponse(res.data);
+    state.canEdit = true;
+    state.authError = null;
+    return changed;
+  }
+  state.canEdit = false;
+  state.authError = res.status === 401 ? "Enter the access token to view and edit the configuration." : (res.data.error ?? `Config unavailable (HTTP ${res.status})`);
+  return false;
+}
+
+let settingsRenderedFor = null;
+async function refresh(force = false) {
+  try {
+    const [mons, events] = await Promise.all([api("/api/monitors"), api("/api/events?limit=25")]);
+    if (mons.status === 401) state.authError = "Enter the access token to view this dashboard.";
+    state.runtime = new Map((mons.ok ? mons.data : []).map((m) => [m.name, m]));
+    state.events = events.ok ? events.data : [];
+    await loadConfig();
+    state.netError = null;
+  } catch (err) {
+    state.netError = `Cannot reach service-watcher: ${err.message}`;
+  }
+  renderAll();
+  // Only rebuild the settings form when the config actually changed, so typing isn't interrupted.
+  if (force || settingsRenderedFor !== state.version) { settingsRenderedFor = state.version; renderSettings(); }
+}
+
+// ───────────────────────── wiring ─────────────────────────
+document.addEventListener("click", async (ev) => {
+  const t = ev.target;
+  const tab = t.closest("[data-tab]");
+  if (tab) {
+    document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("active", b === tab));
+    for (const v of ["monitors", "alerts", "settings"]) $(`view-${v}`).hidden = v !== tab.dataset.tab;
+    try { localStorage.setItem("watcher-tab", tab.dataset.tab); } catch {}
+    return;
+  }
+  if (t.closest("[data-tag]")) { $("q").value = t.closest("[data-tag]").dataset.tag; return renderMonitors(); }
+  if (t.closest("[data-new=monitor]")) return openMonitor(null);
+  if (t.closest("[data-new=alert]")) return openAlert(null);
+  if (t.dataset.editMonitor) return openMonitor(t.dataset.editMonitor);
+  if (t.dataset.editAlert) return openAlert(t.dataset.editAlert);
+  if (t.dataset.testAlert) {
+    t.disabled = true;
+    const res = await api(`/api/alerts/${encodeURIComponent(t.dataset.testAlert)}/test`, "POST");
+    t.disabled = false;
+    t.textContent = res.ok ? "✓ Sent" : "✗ Failed";
+    setTimeout(() => (t.textContent = "Send test"), 2500);
+    return;
+  }
+  const btn = t.closest("[data-act]");
+  if (btn) {
+    btn.disabled = true;
+    const res = await api(`/api/monitors/${encodeURIComponent(btn.dataset.name)}/${btn.dataset.act}`, "POST");
+    if (!res.ok) alert(res.data.error ?? `HTTP ${res.status}`);
+    await refresh();
+  }
+});
+$("q").addEventListener("input", renderMonitors);
+$("status").addEventListener("change", renderMonitors);
+try { const saved = localStorage.getItem("watcher-tab"); if (saved) document.querySelector(`[data-tab="${saved}"]`)?.click(); } catch {}
+refresh(true);
+setInterval(() => { if (!dlg.open) refresh(); }, 5000);
+</script>
+</body>
+</html>
