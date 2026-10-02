@@ -1,0 +1,23 @@
+{
+  "name": "service-watcher",
+  "version": "0.1.0",
+  "description": "Health checker for websites, TCP, UDP, DNS and commands with Discord/Slack/Telegram/ntfy/... alerts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "service-watcher": "src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts run",
+    "dev": "bun --watch run src/index.ts run",
+    "check": "bun run src/index.ts check",
+    "validate": "bun run src/index.ts validate",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build src/index.ts --compile --outfile dist/service-watcher"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,176 @@
+# service-watcher config. Copy to config.yaml and edit.
+# Durations: 500ms, 30s, 5m, 1h30m, 7d.  Secrets: ${ENV_VAR} or ${ENV_VAR:-default}
+# (Bun loads .env automatically). The file is hot-reloaded on save.
+
+server:
+  enabled: true
+  host: 127.0.0.1          # use 0.0.0.0 to expose it (then set a token!)
+  port: 8080
+  # token: ${WATCHER_TOKEN} # required for pause/resume/check-now when set
+  # protectReads: false     # also require it for the dashboard and read APIs
+
+storage:
+  path: ./data/watcher.db   # relative to this file
+  retention: 30d
+
+log:
+  level: info               # debug | info | warn | error  (LOG_LEVEL env overrides)
+  format: pretty            # pretty | json
+
+# ─── Alert channels ─────────────────────────────────────────────────────────
+# Every alerter accepts:
+#   events:  [down, up, degraded, reminder]   which events it receives (default: all)
+#   title:   "{{emoji}} {{monitor.name}} is {{kindUpper}}"   custom title template
+#   message: "{{result.message}} ({{latency}})"               custom body template
+#   retries: 2                                 delivery retries (honours rate limits)
+# Template variables: kind, kindUpper, emoji, status, previousStatus, monitor.name,
+# monitor.target, monitor.type, monitor.description, tags, result.message,
+# result.latencyMs, latency, duration, since, time. Use {{x|json}} for JSON-safe output.
+alerts:
+  discord:
+    type: discord
+    url: ${DISCORD_WEBHOOK_URL}
+    username: Service Watcher
+    mentions: ["@here"]          # e.g. "<@&ROLE_ID>", "<@USER_ID>" — only pinged on down/reminder
+    # threadId: "123456789"      # post into a forum thread
+
+  # discord-oncall:              # a second Discord channel used for escalation
+  #   type: discord
+  #   url: ${DISCORD_ONCALL_WEBHOOK_URL}
+  #   mentions: ["<@&123456789012345678>"]
+  #   events: [down, up]
+
+  # slack:
+  #   type: slack
+  #   url: ${SLACK_WEBHOOK_URL}
+  #   mentions: ["<!channel>"]
+
+  # telegram:
+  #   type: telegram
+  #   botToken: ${TELEGRAM_BOT_TOKEN}
+  #   chatId: "-1001234567890"
+  #   silentRecovery: true
+
+  # ntfy:
+  #   type: ntfy
+  #   server: https://ntfy.sh
+  #   topic: my-secret-topic
+  #   # token: ${NTFY_TOKEN}
+  #   priorityDown: 5
+  #   priorityUp: 3
+
+  # gotify:
+  #   type: gotify
+  #   server: https://gotify.example.com
+  #   token: ${GOTIFY_APP_TOKEN}
+
+  # pushover:
+  #   type: pushover
+  #   token: ${PUSHOVER_APP_TOKEN}
+  #   user: ${PUSHOVER_USER_KEY}
+  #   priorityDown: 1
+
+  # webhook:                     # any HTTP endpoint; default body is the full event JSON
+  #   type: webhook
+  #   url: https://example.com/hooks/health
+  #   headers: { Authorization: "Bearer ${HOOK_TOKEN}" }
+  #   body: '{"text": {{monitor.name|json}}, "state": "{{kind}}"}'
+
+  # email:                       # anything scriptable: event JSON on stdin + WATCHER_* env vars
+  #   type: command
+  #   command: 'printf "Subject: $WATCHER_TITLE\n\n$WATCHER_MESSAGE" | msmtp ops@example.com'
+
+  console:
+    type: console                # prints alerts to stdout — handy for testing
+
+# ─── Defaults merged into every monitor ─────────────────────────────────────
+defaults:
+  interval: 60s
+  timeout: 10s
+  retries: 1                     # extra attempts inside one check before it counts as failed
+  retryDelay: 2s
+  failureThreshold: 2            # consecutive failed checks before DOWN
+  recoveryThreshold: 1           # consecutive good checks before UP again
+  renotify: 30m                  # reminder while still down (0 = off)
+  notifyOn: [down, up, degraded, reminder]
+  alerts: [discord, console]
+  # maintenance:                 # global windows, added to each monitor's own
+  #   - { days: [sun], start: "03:00", end: "04:00", timezone: Europe/London }
+
+# ─── Monitors ───────────────────────────────────────────────────────────────
+monitors:
+  - name: example-site
+    type: http
+    url: https://example.com
+    description: Public marketing site
+    tags: [web, prod]
+    expectStatus: [2xx]          # e.g. [200, 301, "400-404", 3xx]
+    contains: Example Domain     # string or list; all must appear
+    # notContains: ["Error", "Maintenance"]
+    # matches: "<title>.*</title>"
+    degradedLatency: 1500ms      # slower than this = DEGRADED (still counts as up)
+    certExpiryDays: 14           # DEGRADED when the TLS cert expires within 14 days
+    alerts:
+      - discord
+      - console
+      # - { to: discord-oncall, after: 15m }   # escalate if still down after 15 minutes
+
+  # - name: api-health
+  #   type: http
+  #   url: https://api.example.com/health
+  #   method: POST
+  #   headers: { Authorization: "Bearer ${API_TOKEN}" }
+  #   body: { probe: true }        # objects are sent as JSON
+  #   json:
+  #     - { path: status, equals: ok }
+  #     - { path: checks.database.latency_ms, exists: true }
+  #     - { path: version, matches: "^2\\." }
+  #   expectHeaders: { content-type: json }
+  #   followRedirects: false
+  #   ignoreTls: false
+  #   interval: 30s
+
+  - name: cloudflare-https-port
+    type: tcp
+    host: 1.1.1.1
+    port: 443
+    tags: [network]
+    # tls: true                    # do a TLS handshake (enables certExpiryDays too)
+    # send: "PING\r\n"             # send a payload after connecting...
+    # expect: "+PONG"              # ...and require this in the response
+    # encoding: utf8               # utf8 | hex | base64 for send/expect
+
+  - name: cloudflare-dns-udp
+    type: udp
+    host: 1.1.1.1
+    port: 53
+    tags: [network, dns]
+    # A raw DNS query for example.com/A — any reply means the server is alive.
+    send: "abcd 0100 0001 0000 0000 0000 07 6578616d706c65 03 636f6d 00 0001 0001"
+    encoding: hex
+    expectResponse: true           # false = pass if sent with no ICMP "port unreachable"
+    # expect: "abcd"               # require bytes in the reply (same encoding)
+
+  - name: example-dns
+    type: dns
+    hostname: example.com
+    recordType: A                  # A AAAA CNAME MX TXT NS SRV PTR SOA CAA
+    resolvers: [1.1.1.1, 8.8.8.8]  # empty = system resolver
+    # expect: ["93.184.215.14"]    # values that must be in the answer
+    interval: 5m
+    tags: [dns]
+
+  # - name: disk-space
+  #   type: command
+  #   command: test $(df --output=pcent / | tail -1 | tr -dc 0-9) -lt 90
+  #   interval: 5m
+
+  # - name: nightly-backup-box
+  #   type: tcp
+  #   host: backup.internal
+  #   port: 22
+  #   expect: SSH-
+  #   maintenance:
+  #     - { days: [mon, tue, wed, thu, fri], start: "23:30", end: "01:00", timezone: America/New_York }
+  #     - { from: "2026-10-12T08:00:00Z", until: "2026-10-12T12:00:00Z" }   # one-off
+  #   enabled: true
