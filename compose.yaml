@@ -1,0 +1,22 @@
+services:
+  service-watcher:
+    build: .
+    image: service-watcher:latest
+    container_name: service-watcher
+    restart: unless-stopped
+    ports:
+      # Drop the "127.0.0.1:" prefix to reach the UI from other machines.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - watcher-data:/data
+    environment:
+      TZ: UTC # timezone for maintenance windows that don't name one
+      # Pick your own UI token; otherwise one is generated and printed in `docker compose logs`.
+      # WATCHER_TOKEN: change-me
+    # Secrets referenced as ${VAR} in the config (webhook URLs, bot tokens...).
+    env_file:
+      - path: .env
+        required: false
+
+volumes:
+  watcher-data:
