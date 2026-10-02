@@ -1,0 +1,10 @@
+node_modules/
+data/
+dist/
+config.yaml
+.env
+config.yaml.bak
+config.yaml.tmp-*
+*.db
+*.db-shm
+*.db-wal

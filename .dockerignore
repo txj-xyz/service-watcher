@@ -1,0 +1,9 @@
+node_modules
+dist
+data
+*.db
+*.db-*
+config.yaml
+config.yaml.*
+.env
+.git
